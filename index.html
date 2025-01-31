@@ -16,7 +16,7 @@
 
             if (userCodes) {
                 const codeElements = userCodes.codes.map(code => `<center>${code}</center>`).join('');
-                const date = new Date().toISOString().split('T')[0];
+                const date = userCodes.generation_time;
                 table.innerHTML = `<tbody><tr><td>${codeElements}<br><center>${date}</center></td></tr></tbody>`;
             }
         }
