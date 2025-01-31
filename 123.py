@@ -3,7 +3,7 @@ import datetime
 import pytz
 import json
 
-def shentropye():
+def shentropye(limit=None):
     timezones = pytz.all_timezones  
     pending = random.randint(1, 10000) 
 
@@ -25,12 +25,12 @@ def shentropye():
             korpo = f"{random.randint(100, 999)}" 
             chance = 50  
 
-       #     while len(korpo) < 9: 
-       #         if random.randint(1, 100) <= chance: 
-       #             chance -= 10  
-       #             korpo += str(random.randint(0, 9)) 
-       #         else:
-       #             break
+            while len(korpo) < limit: 
+                if random.randint(1, 100) <= chance: 
+                    chance -= 10  
+                    korpo += str(random.randint(0, 9)) 
+                else:
+                    break
 
             trombino = f"{random.randint(10, 99)}" 
 
@@ -50,4 +50,4 @@ def shentropye():
     with open("shentropye_codes.json", "w") as f:
         json.dump(data, f, indent=4)
 
-shentropye()
+shentropye(limit=3)
