@@ -1,0 +1,46 @@
+name: Update shentropye codes
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 5 * * *'
+
+jobs:
+  update_codes:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Install Python and pip
+      run: |
+        sudo apt update
+        sudo apt install -y python3 python3-pip
+
+    - name: Install pytz
+      run: |
+        python3 -m pip install pytz
+
+    - name: Run 123.py script
+      run: |
+        python3 123.py
+
+    - name: Check if shentropye_codes.json has changed
+      run: |
+        if [ -f shentropye_codes.json ]; then
+          echo "File exists, creating backup..."
+          cp shentropye_codes.json shentropye_codes.json.bak
+        else
+          echo "File does not exist, creating new file"
+        fi
+
+    - name: Commit and push shentropye_codes.json if changed
+      run: |
+        git config --global user.name "github-actions"
+        git config --global user.email "github-actions@users.noreply.github.com"
+        git add shentropye_codes.json
+        git diff --cached --exit-code || (
+          git commit -m "Update shentropye_codes.json with latest data"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/moshiax/shentropye.git
+        )

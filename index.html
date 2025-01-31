@@ -1,0 +1,49 @@
+<HTML>
+<HEAD>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
+<TITLE>Коды шентропье бесплатно</TITLE>
+    <SCRIPT>
+        async function displayCodes() {
+            const codes = await fetchCodes();  
+            const userTimezone = getUserTimezone();
+
+            const userCodes = codes.find(code => code.timezone === userTimezone);
+            const table = document.getElementById('codes-table');
+
+            if (userCodes) {
+                const codeElements = userCodes.codes.map(code => `<center>${code}</center>`).join('');
+                const date = new Date().toISOString().split('T')[0];
+                table.innerHTML = `<tbody><tr><td>${codeElements}<br><center>${date}</center></td></tr></tbody>`;
+            }
+        }
+
+        function getUserTimezone() {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone;
+        }
+
+        async function fetchCodes() {
+            const response = await fetch('shentropye_codes.json');
+            const data = await response.json();
+            return data;
+        }
+
+        window.onload = displayCodes;
+    </SCRIPT>
+</HEAD>
+<BODY BGCOLOR="BLACK" TEXT="LIGHTBLUE" LINK="WHITE" VLINK="WHITE">
+    <H2><CENTER>
+        Коды шентропье. Обновляются один раз в день. 
+    </CENTER></H2>
+    <BR>
+
+    <CENTER>
+        <TABLE ID="codes-table" WIDTH="60%"></TABLE>
+    </CENTER>
+    <CENTER><SPAN ID="date"></SPAN></CENTER>
+    <H2><CENTER>
+        <FONT COLOR="#FF0000"><B>ISDALSKVINNEN</B></FONT> выброс произведен.
+    </CENTER></H2>
+    <BR>
+    <CENTER><IMG SRC="isha.gif"></CENTER>
+</BODY>
+</HTML>
