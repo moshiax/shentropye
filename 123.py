@@ -10,21 +10,16 @@ def randint(a, b, digits=3):
 
 def get_trombino(testata, korpo):
 
-    random_number = randint(0, 1488, 4)
-    string_to_hash = testata + korpo + random_number
+    rounds = int(hashlib.sha256((testata + korpo).encode()).hexdigest()[:2], 16) % 8 + 1
+    s = testata + korpo
+    for _ in range(rounds):
+        s = hashlib.sha256(s.encode()).hexdigest()
+    digits = ''.join(filter(str.isdigit, s))
 
-    def get_digits(string_to_hash):
-        sha256_hash = hashlib.sha256(string_to_hash.encode()).hexdigest()
-        digits_only = ''.join(filter(str.isdigit, sha256_hash))
-
-        return digits_only
-
-    digits_only = get_digits(string_to_hash)
-
-    while not digits_only:
-        digits_only = get_digits(digits_only)
+    while not digits:
+        digits = ''.join(filter(str.isdigit, hashlib.sha256(digits.encode()).hexdigest()))
     
-    return digits_only[0] + digits_only[-1]
+    return digits[0] + digits[-1]
 
 def shentropye(limit=None):
     timezones = pytz.all_timezones  
@@ -32,8 +27,8 @@ def shentropye(limit=None):
 
     def pendings(value, pending):
         value_str = str(value)
-        shift_amount = int(pending) % len(value_str)
-        shifted_value_str = value_str[shift_amount:] + value_str[:shift_amount]  
+        step = int(hashlib.sha1(pending.encode()).hexdigest(), 16) % len(value_str)
+        shifted_value_str = value_str[step:] + value_str[:step]
         return int(shifted_value_str)
 
     data = []  
