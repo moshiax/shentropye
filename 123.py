@@ -19,7 +19,9 @@ def get_trombino(testata, korpo):
     while not digits:
         digits = ''.join(filter(str.isdigit, hashlib.sha256(digits.encode()).hexdigest()))
     
-    return digits[0] + digits[-1]
+    idx1 = secrets.randbelow(len(digits))
+    idx2 = secrets.randbelow(len(digits))
+    return digits[idx1] + digits[idx2]
 
 def shentropye(limit=None):
     timezones = pytz.all_timezones  
@@ -27,9 +29,10 @@ def shentropye(limit=None):
 
     def pendings(value, pending):
         value_str = str(value)
-        step = int(hashlib.sha1(pending.encode()).hexdigest(), 16) % len(value_str)
-        shifted_value_str = value_str[step:] + value_str[:step]
-        return int(shifted_value_str)
+        for _ in range(secrets.randbelow(3)+1):
+            step = int(hashlib.sha1(pending.encode()).hexdigest(), 16) % len(value_str)
+            value_str = value_str[step:] + value_str[:step]
+        return int(value_str)
 
     data = []  
 
