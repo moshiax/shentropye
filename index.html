@@ -35,7 +35,7 @@
         }
 
         async function fetchCodes() {
-            const response = await fetch('shentropye_codes.json');
+            const response = await fetch('https://raw.githubusercontent.com/moshiax/shentropye/refs/heads/pauk/shentropye_codes.json');
             const data = await response.json();
             return data;
         }
