@@ -2,12 +2,14 @@ import hashlib
 import datetime
 from zoneinfo import ZoneInfo, available_timezones
 import json
+import os
+import multiprocessing as mp
 
 MASK_64 = (1 << 64) - 1
 
 def _det_uint(key):
-    digest = hashlib.sha3_256(str(key).encode()).hexdigest()
-    return int(digest[:16], 16)
+    digest = hashlib.sha3_256(str(key).encode()).digest()
+    return int.from_bytes(digest[:8], "big")
 
 def randint(a, b, digits=3, key=""):
     num = (_det_uint(f"randint:{a}:{b}:{digits}:{key}") % (b - a + 1)) + a
@@ -18,35 +20,35 @@ def _u64(value):
 
 def _rotl(value, shift):
     shift &= 63
-    value = _u64(value)
-    return _u64((value << shift) | (value >> (64 - shift)))
+    value &= MASK_64
+    return ((value << shift) | (value >> ((-shift) & 63))) & MASK_64
 
 def _rotr(value, shift):
     shift &= 63
-    value = _u64(value)
-    return _u64((value >> shift) | (value << (64 - shift)))
+    value &= MASK_64
+    return ((value >> shift) | (value << ((-shift) & 63))) & MASK_64
 
 def _seed_triplet(testata, korpo, pending, salt):
     raw = f"{testata}|{korpo}|{pending}|{salt}".encode()
-    digest = hashlib.sha512(raw).hexdigest()
-    a = int(digest[0:16], 16)
-    b = int(digest[16:32], 16)
-    c = int(digest[32:48], 16)
+    digest = hashlib.sha512(raw).digest()
+    a = int.from_bytes(digest[0:8], "big")
+    b = int.from_bytes(digest[8:16], "big")
+    c = int.from_bytes(digest[16:24], "big")
     return a, b, c
 
 def _bytefold(value):
-    value = _u64(value)
+    value &= MASK_64
     left = ((value & 0x00FF00FF00FF00FF) << 8)
     right = ((value & 0xFF00FF00FF00FF00) >> 8)
-    return _u64(left | right)
+    return (left | right) & MASK_64
 
 def _nibble_weave(a, b):
     mask = 0x0F0F0F0F0F0F0F0F
-    return _u64(((a & mask) << 4) | ((b & ~mask) >> 4))
+    return (((a & mask) << 4) | ((b & ~mask) >> 4)) & MASK_64
 
 def _hash_pulse(x, y, z, salt):
-    h = hashlib.blake2s(f"{x}:{y}:{z}:{salt}".encode()).hexdigest()
-    return int(h[:16], 16)
+    h = hashlib.blake2s(f"{x}:{y}:{z}:{salt}".encode()).digest()
+    return int.from_bytes(h[:8], "big")
 
 def _stage_0(x, y, z, lane):
     twist = _rotl(x ^ 11400714785074694791, 1)
@@ -642,25 +644,47 @@ def _labyrinth_number(testata, korpo, pending, salt):
     x, y, z = _seed_triplet(testata, korpo, pending, salt)
     rounds_seed = _det_uint(f'{salt}:{pending}:{testata}:{korpo}')
     rounds = 41 + (rounds_seed % 37)
-    lane = (int(pending) % 53) + 1
+    pending_int = int(pending)
+    lane = (pending_int % 53) + 1
+    stages_local = stages
+    n = len(stages_local)
+    rotl = _rotl
+    rotr = _rotr
+    u64 = _u64
+    bytefold = _bytefold
+
     for r in range(rounds):
-        idx = (x ^ _rotl(y, (r % 17) + 5) ^ _rotr(z, (r % 13) + 7) ^ (r * 0x9E3779B1)) % len(stages)
-        x, y, z = stages[idx](x, y, z, lane + r)
-        link_a, link_b, flux = _braid_links(idx, lane + r, x, y, z)
+        idx = (x ^ rotl(y, (r % 17) + 5) ^ rotr(z, (r % 13) + 7) ^ (r * 0x9E3779B1)) % n
+        x, y, z = stages_local[idx](x, y, z, lane + r)
+
+        lane_r = lane + r
+        flux = u64((x ^ rotl(y, (idx % 23) + 3) ^ rotr(z, (lane_r % 29) + 1)) + idx + lane_r)
+        jump = ((flux >> 7) ^ (flux >> 19) ^ (flux >> 41)) % n
+        sway = ((flux * 0x9E3779B185EBCA87) ^ bytefold(flux)) % n
+        link_a = (idx + jump + lane_r + (x & 0x1F)) % n
+        link_b = (idx ^ sway ^ (y & 0x3F) ^ ((z >> 11) & 0x1F)) % n
+        if link_a == idx:
+            link_a = (link_a + 1 + (flux & 0x7)) % n
+        if link_b in (idx, link_a):
+            link_b = (link_b + 3 + ((flux >> 5) & 0xF)) % n
+
         if (r + idx + lane) % 2 == 0:
-            x, y, z = stages[link_a](x, y, z, lane + link_a)
+            x, y, z = stages_local[link_a](x, y, z, lane + link_a)
         else:
-            x, y, z = stages[link_b](x, y, z, lane + link_b)
+            x, y, z = stages_local[link_b](x, y, z, lane + link_b)
+
         if ((r + idx + (flux & 0xF)) % 5 == 0) or ((flux >> 17) & 1):
-            bounce = (len(stages) - 1 - idx + lane + (flux % 11)) % len(stages)
-            x, y, z = stages[bounce](x, y, z, lane + bounce)
-        x = _u64(x ^ _rotl(flux + z, (idx % 19) + 1))
-        y = _u64(y + _rotr(flux ^ x, (lane % 23) + 1))
-        z = _u64(z ^ _bytefold(x + y + flux + r))
+            bounce = (n - 1 - idx + lane + (flux % 11)) % n
+            x, y, z = stages_local[bounce](x, y, z, lane + bounce)
+
+        x = u64(x ^ rotl(flux + z, (idx % 19) + 1))
+        y = u64(y + rotr(flux ^ x, (lane % 23) + 1))
+        z = u64(z ^ bytefold(x + y + flux + r))
         lane = (lane + idx + link_a + link_b + (x & 0xF) + ((flux >> 9) & 0x1F)) % 97 + 1
-    chaotic = hashlib.sha3_512(f'{x}:{y}:{z}:{salt}:{lane}'.encode()).hexdigest()
-    num = int(chaotic[:32], 16) ^ x ^ _rotl(y, 11) ^ _rotr(z, 29)
-    return _u64(num)
+
+    chaotic = hashlib.sha3_512(f'{x}:{y}:{z}:{salt}:{lane}'.encode()).digest()
+    num = int.from_bytes(chaotic[:16], 'big') ^ x ^ rotl(y, 11) ^ rotr(z, 29)
+    return u64(num)
 
 def get_trombino(testata, korpo, pending, seed_key):
     bag = []
@@ -677,6 +701,7 @@ def get_trombino(testata, korpo, pending, seed_key):
 
 def _pendings(value, pending, lane, seed_key):
     value_str = str(value)
+    pending_int = int(pending)
     churn = _labyrinth_number(value_str, pending, pending, f'{lane}-{seed_key}')
     loops = 3 + (churn % 4)
     for i in range(loops):
@@ -685,7 +710,7 @@ def _pendings(value, pending, lane, seed_key):
         mirror = value_str[::-1]
         weave = ''.join(a + b for a, b in zip(value_str, mirror))
         value_str = weave[:len(value_str)] if weave else value_str
-        churn = _u64(churn ^ _rotl(churn + i + int(pending) + lane, (i * 7 + lane) % 63 + 1))
+        churn = _u64(churn ^ _rotl(churn + i + pending_int + lane, (i * 7 + lane) % 63 + 1))
     return int(value_str) if value_str else value
 
 def _extend_korpo(korpo, pending, limit, seed_key):
@@ -722,28 +747,58 @@ def _generate_code_for_timezone(tz, pending, limit, generation_time, code_index)
     code = f"{testata}-{final_korpo}.{trombino}"
     return code
 
+
+
+def _build_timezone_payload(task):
+    tz, pending, limit, generation_time = task
+    codes_for_timezone = []
+    for code_index in range(5):
+        code = _generate_code_for_timezone(tz, pending, limit, generation_time, code_index)
+        codes_for_timezone.append(code)
+    return {
+        "timezone": tz,
+        "codes": codes_for_timezone,
+        "generation_time": generation_time
+    }
+
+def _parallel_payloads(tasks, workers):
+    if workers <= 1:
+        return [_build_timezone_payload(task) for task in tasks]
+
+    start_methods = mp.get_all_start_methods()
+    if "fork" in start_methods:
+        method = "fork"
+    elif "spawn" in start_methods:
+        method = "spawn"
+    else:
+        return [_build_timezone_payload(task) for task in tasks]
+
+    ctx = mp.get_context(method)
+    chunk = max(1, len(tasks) // (workers * 4))
+    with ctx.Pool(processes=workers) as pool:
+        return pool.map(_build_timezone_payload, tasks, chunksize=chunk)
+
+
 def shentropye(limit=None):
     timezones = sorted(available_timezones())
     if limit is None:
         limit = 3
 
-    data = []
+    tasks = []
     for tz in timezones:
         tz_obj = ZoneInfo(tz)
         now = datetime.datetime.now(tz_obj)
         generation_time = now.strftime('%Y-%m-%d')
         pending = randint(0, 9999, 4, key=f'{tz}|{generation_time}|pending')
-        codes_for_timezone = []
-        for code_index in range(5):
-            code = _generate_code_for_timezone(tz, pending, limit, generation_time, code_index)
-            codes_for_timezone.append(code)
-        data.append({
-            "timezone": tz,
-            "codes": codes_for_timezone,
-            "generation_time": generation_time
-        })
+        tasks.append((tz, pending, limit, generation_time))
+
+    workers = min(32, os.cpu_count() or 1, len(tasks))
+    data = _parallel_payloads(tasks, workers)
 
     with open("shentropye_codes.json", "w") as f:
         json.dump(data, f, indent=4)
 
-shentropye(limit=3)
+
+if __name__ == "__main__":
+    mp.freeze_support()
+    shentropye(limit=3)
